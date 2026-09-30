@@ -28,8 +28,99 @@
 
 <div id="app">
 
+  <!-- AUTH: loading splash -->
+  <section id="authLoading" class="onboarding">
+    <p class="auth-loading-text">লোড হচ্ছে…</p>
+  </section>
+
+  <!-- AUTH: login / signup / forgot / reset -->
+  <section id="authScreen" class="onboarding hidden">
+    <div class="onboarding-card">
+      <p class="eyebrow-free-label">টাকার হিসাব</p>
+
+      <div id="authConfigWarn" class="auth-msg error hidden">
+        <strong>Supabase সেটআপ বাকি আছে।</strong> <code>supabase-config.js</code> ফাইলে আপনার Project URL আর anon key বসান।
+      </div>
+      <div id="authMsg" class="auth-msg hidden" role="alert"></div>
+
+      <form id="loginForm" class="auth-form">
+        <h1>লগইন</h1>
+        <p class="sub">আপনার অ্যাকাউন্টে ঢুকে হিসাব দেখুন।</p>
+        <label>ইমেইল
+          <input type="email" id="login_email" required autocomplete="email" placeholder="you@example.com">
+        </label>
+        <label>পাসওয়ার্ড
+          <span class="pw-wrap">
+            <input type="password" id="login_password" required autocomplete="current-password">
+            <button type="button" class="pw-toggle" data-target="login_password">দেখান</button>
+          </span>
+        </label>
+        <button type="submit">লগইন</button>
+        <div class="auth-links">
+          <button type="button" class="link-btn" data-go="forgot">পাসওয়ার্ড ভুলে গেছেন?</button>
+          <button type="button" class="link-btn" data-go="signup">নতুন অ্যাকাউন্ট খুলুন</button>
+        </div>
+      </form>
+
+      <form id="signupForm" class="auth-form hidden">
+        <h1>নতুন অ্যাকাউন্ট</h1>
+        <p class="sub">ইমেইল আর একটি পাসওয়ার্ড দিয়ে অ্যাকাউন্ট খুলুন।</p>
+        <label>ইমেইল
+          <input type="email" id="signup_email" required autocomplete="email" placeholder="you@example.com">
+        </label>
+        <label>পাসওয়ার্ড <span class="opt">(কমপক্ষে ৮ অক্ষর)</span>
+          <span class="pw-wrap">
+            <input type="password" id="signup_password" required minlength="8" autocomplete="new-password">
+            <button type="button" class="pw-toggle" data-target="signup_password">দেখান</button>
+          </span>
+        </label>
+        <label>পাসওয়ার্ড আবার লিখুন
+          <input type="password" id="signup_password2" required minlength="8" autocomplete="new-password">
+        </label>
+        <button type="submit">অ্যাকাউন্ট খুলুন</button>
+        <div class="auth-links">
+          <button type="button" class="link-btn" data-go="login">আগে থেকেই অ্যাকাউন্ট আছে? লগইন</button>
+        </div>
+      </form>
+
+      <form id="forgotForm" class="auth-form hidden">
+        <h1>পাসওয়ার্ড রিসেট</h1>
+        <p class="sub">আপনার ইমেইল দিন। পাসওয়ার্ড বদলানোর একটি লিংক পাঠিয়ে দেওয়া হবে।</p>
+        <label>ইমেইল
+          <input type="email" id="forgot_email" required autocomplete="email" placeholder="you@example.com">
+        </label>
+        <button type="submit">রিসেট লিংক পাঠান</button>
+        <div class="auth-links">
+          <button type="button" class="link-btn" data-go="login">← লগইনে ফিরে যান</button>
+        </div>
+      </form>
+
+      <form id="resetForm" class="auth-form hidden">
+        <h1>নতুন পাসওয়ার্ড দিন</h1>
+        <p class="sub">নতুন একটি পাসওয়ার্ড সেট করুন।</p>
+        <label>নতুন পাসওয়ার্ড <span class="opt">(কমপক্ষে ৮ অক্ষর)</span>
+          <span class="pw-wrap">
+            <input type="password" id="reset_password" required minlength="8" autocomplete="new-password">
+            <button type="button" class="pw-toggle" data-target="reset_password">দেখান</button>
+          </span>
+        </label>
+        <label>পাসওয়ার্ড আবার লিখুন
+          <input type="password" id="reset_password2" required minlength="8" autocomplete="new-password">
+        </label>
+        <button type="submit">পাসওয়ার্ড বদলান</button>
+      </form>
+
+      <div id="loadError" class="auth-form hidden">
+        <h1>ডেটা লোড হয়নি</h1>
+        <p class="sub" id="loadErrorText"></p>
+        <button type="button" id="loadRetryBtn" class="primary-btn">আবার চেষ্টা করুন</button>
+        <button type="button" id="loadLogoutBtn" class="ghost-btn" style="margin-top:10px">লগ আউট</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ONBOARDING -->
-  <section id="onboarding" class="onboarding">
+  <section id="onboarding" class="onboarding hidden">
     <div class="onboarding-card">
       <p class="eyebrow-free-label">টাকার হিসাব</p>
       <h1>শুরু করা যাক</h1>
@@ -48,7 +139,7 @@
         </div>
         <button type="submit">হিসাব শুরু করুন</button>
       </form>
-      <p class="onboarding-note">চিন্তা নেই — এই তথ্য শুধু আপনার এই ব্রাউজারেই থাকবে। পরে সেটিংস থেকে বদলানো যাবে, আর ব্যাকআপও নেওয়া যাবে।</p>
+      <p class="onboarding-note">চিন্তা নেই — এই তথ্য আপনার অ্যাকাউন্টে সেভ থাকবে, যেকোনো ডিভাইস থেকে লগইন করলেই পাবেন। পরে সেটিংস থেকে বদলানো যাবে।</p>
     </div>
   </section>
 
@@ -59,6 +150,7 @@
       <div class="brand">
         <h1>টাকার হিসাব</h1>
         <p class="period" id="periodLabel">—</p>
+        <p class="sync-status" id="syncStatus"></p>
       </div>
 
       <div class="hero-balance">
@@ -218,8 +310,14 @@
         </div>
 
         <div class="card">
+          <h3>অ্যাকাউন্ট</h3>
+          <p class="helper-hint">লগইন করা আছে: <strong id="accountEmail">—</strong></p>
+          <button type="button" id="logoutBtn" class="ghost-btn">লগ আউট</button>
+        </div>
+
+        <div class="card">
           <h3>ডেটা ব্যাকআপ</h3>
-          <p class="helper-hint">ডেটাবেস নেই — সব তথ্য এই ব্রাউজারে সেভ থাকে। ব্রাউজারের ডেটা মুছে গেলে হিসাবও হারিয়ে যাবে, তাই মাঝে মাঝে ব্যাকআপ নিয়ে রাখুন।</p>
+          <p class="helper-hint">আপনার সব তথ্য আপনার অ্যাকাউন্টে অনলাইনে সেভ থাকে। তবুও মাঝে মাঝে একটা ব্যাকআপ ফাইল নামিয়ে রাখতে পারেন।</p>
           <div class="btn-row">
             <button type="button" id="exportJsonBtn" class="ghost-btn">JSON ব্যাকআপ ডাউনলোড</button>
             <label class="ghost-btn file-btn">JSON থেকে ফিরিয়ে আনুন
@@ -337,6 +435,8 @@
 <!-- Print-only report, filled in by JS just before printing -->
 <div id="printArea" class="print-only"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
