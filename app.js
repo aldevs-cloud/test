@@ -36,31 +36,6 @@
     return { setup: null, topups: [], entries: {}, quickNotes: {}, plans: [], activePlanId: null, bills: [], activeBillId: null };
   }
 
-  function load(){
-    try{
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return defaultState();
-      var parsed = JSON.parse(raw);
-      return {
-        setup: parsed.setup || null,
-        topups: parsed.topups || [],
-        entries: parsed.entries || {},
-        quickNotes: parsed.quickNotes || {},
-        plans: parsed.plans || [],
-        activePlanId: parsed.activePlanId || null,
-        bills: parsed.bills || [],
-        activeBillId: parsed.activeBillId || null
-      };
-    }catch(e){
-      console.error("লোড করতে সমস্যা হয়েছে", e);
-      return defaultState();
-    }
-  }
-
-  function save(){
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }
-
   function getTotals(){
     var totalBalance = (state.setup ? Number(state.setup.initialBalance) : 0) +
       state.topups.reduce(function(s,t){ return s + Number(t.amount||0); }, 0);
@@ -803,6 +778,7 @@
     addBtn.addEventListener("click", createBill);
     stripEl.appendChild(addBtn);
 
+    if(!getActiveBill() && state.bills.length) state.activeBillId = state.bills[0].id;
     var bill = getActiveBill();
     if(!bill){
       $("billEmpty").classList.remove("hidden");
@@ -961,16 +937,7 @@
       try{
         var parsed = JSON.parse(reader.result);
         if(!confirm("বর্তমান সব ডেটা মুছে গিয়ে এই ব্যাকআপ ফাইলের ডেটা বসে যাবে। এগোতে চান?")) return;
-        state = {
-          setup: parsed.setup || null,
-          topups: parsed.topups || [],
-          entries: parsed.entries || {},
-          quickNotes: parsed.quickNotes || {},
-          plans: parsed.plans || [],
-          activePlanId: parsed.activePlanId || null,
-          bills: parsed.bills || [],
-          activeBillId: parsed.activeBillId || null
-        };
+        state = normalizeState(parsed);
         save();
         init();
       }catch(err){
@@ -1009,8 +976,9 @@
   $("resetAllBtn").addEventListener("click", function(){
     if(!confirm("সত্যিই সব ডেটা মুছে ফেলতে চান? এটা আর ফেরানো যাবে না।")) return;
     if(!confirm("একদম শেষবার জিজ্ঞেস করছি — সব মুছে ফেলি?")) return;
-    localStorage.removeItem(STORAGE_KEY);
-    location.reload();
+    state = defaultState();
+    save();
+    init();
   });
 
   /* ---------------- onboarding ---------------- */
@@ -1026,9 +994,386 @@
     init();
   });
 
+  /* ---------------- Supabase: auth + cloud sync ---------------- */
+  var TABLE = "user_data";
+  var sb = null;
+  var currentUser = null;
+  var loadedFor = null;
+  var recoveryMode = false;
+
+  var saveTimer = null, retryTimer = null;
+  var saving = false, pending = false, savePromise = null;
+  var lastSyncedMs = 0;
+
+  function cfg(){ return window.APP_CONFIG || {}; }
+  function configOk(){
+    var c = cfg();
+    return !!(c.SUPABASE_URL && c.SUPABASE_ANON_KEY &&
+      !/YOUR_/i.test(c.SUPABASE_URL) && !/YOUR_/i.test(c.SUPABASE_ANON_KEY) &&
+      window.supabase && window.supabase.createClient);
+  }
+  function redirectUrl(){ return location.origin + location.pathname; }
+  function cleanHash(){
+    if(location.hash){
+      try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+    }
+  }
+
+  /* ----- screens ----- */
+  function showScreen(name){
+    $("authLoading").classList.toggle("hidden", name !== "loading");
+    $("authScreen").classList.toggle("hidden", name !== "auth");
+    if(name !== "app"){
+      onboarding.classList.add("hidden");
+      mainApp.classList.add("hidden");
+    }
+  }
+  var AUTH_FORMS = { login:"loginForm", signup:"signupForm", forgot:"forgotForm", reset:"resetForm", loaderror:"loadError" };
+  function showAuthForm(name, keepMsg){
+    Object.keys(AUTH_FORMS).forEach(function(k){
+      $(AUTH_FORMS[k]).classList.toggle("hidden", k !== name);
+    });
+    if(!keepMsg) showAuthMsg("");
+  }
+  function showAuthMsg(text, kind){
+    var el = $("authMsg");
+    if(!text){ el.classList.add("hidden"); el.textContent = ""; return; }
+    el.textContent = text;
+    el.className = "auth-msg " + (kind || "error");
+  }
+  function authErrText(err){
+    var m = (err && err.message) || "", code = (err && err.code) || "";
+    if(code === "invalid_credentials" || /invalid login credentials/i.test(m)) return "ইমেইল বা পাসওয়ার্ড ঠিক নেই।";
+    if(code === "email_not_confirmed" || /email not confirmed/i.test(m)) return "আগে ইমেইল যাচাই করুন — ইনবক্সে পাঠানো লিংকে ক্লিক করুন।";
+    if(code === "user_already_exists" || /already registered/i.test(m)) return "এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট খোলা হয়েছে। লগইন করুন।";
+    if(code === "weak_password" || /password should be/i.test(m)) return "পাসওয়ার্ড আরও শক্ত করুন (কমপক্ষে ৮ অক্ষর)।";
+    if(code === "same_password" || /different from the old/i.test(m)) return "নতুন পাসওয়ার্ড আগেরটার থেকে আলাদা হতে হবে।";
+    if(code === "over_email_send_rate_limit" || err.status === 429 || /rate limit|too many/i.test(m)) return "অল্প সময়ে অনেকবার চেষ্টা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।";
+    if(/session missing|not authenticated/i.test(m)) return "রিসেট লিংকের মেয়াদ শেষ হয়ে গেছে। \"পাসওয়ার্ড ভুলে গেছেন?\" থেকে নতুন লিংক নিন।";
+    if(/failed to fetch|network/i.test(m)) return "ইন্টারনেট সংযোগ পরীক্ষা করুন।";
+    return "কিছু একটা সমস্যা হয়েছে: " + m;
+  }
+  function busy(form, on){
+    var b = form.querySelector('button[type=submit]');
+    if(b) b.disabled = on;
+  }
+
+  /* ----- sync status pill ----- */
+  function setSyncStatus(kind){
+    var el = $("syncStatus");
+    if(!el) return;
+    var map = { saving:"সেভ হচ্ছে…", saved:"✓ অনলাইনে সেভ হয়েছে", error:"⚠ সেভ হয়নি — আবার চেষ্টা করছি" };
+    el.textContent = map[kind] || "";
+    el.classList.toggle("err", kind === "error");
+  }
+
+  /* ----- saving (debounced upsert of the whole state as one JSON row) ----- */
+  function save(){
+    if(!currentUser || !state) return;
+    pending = true;
+    setSyncStatus("saving");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(pushNow, 500);
+  }
+
+  function pushNow(){
+    clearTimeout(saveTimer); saveTimer = null;
+    clearTimeout(retryTimer); retryTimer = null;
+    if(!currentUser || !state || !pending) return Promise.resolve(true);
+    if(saving) return savePromise;
+    saving = true; pending = false;
+    var uid = currentUser.id, ts = new Date().toISOString();
+
+    function fail(){
+      saving = false; pending = true;
+      setSyncStatus("error");
+      retryTimer = setTimeout(pushNow, 8000);
+      return false;
+    }
+    savePromise = sb.from(TABLE).upsert({ user_id: uid, data: state, updated_at: ts }).then(function(res){
+      if(res.error){ console.error(res.error); return fail(); }
+      saving = false;
+      lastSyncedMs = Date.parse(ts);
+      if(pending) return pushNow();
+      setSyncStatus("saved");
+      return true;
+    }, function(err){ console.error(err); return fail(); });
+    return savePromise;
+  }
+
+  /* ----- loading ----- */
+  function normalizeState(p){
+    p = p || {};
+    return {
+      setup: p.setup || null,
+      topups: p.topups || [],
+      entries: p.entries || {},
+      quickNotes: p.quickNotes || {},
+      plans: p.plans || [],
+      activePlanId: p.activePlanId || null,
+      bills: p.bills || [],
+      activeBillId: p.activeBillId || null
+    };
+  }
+
+  function loadLegacy(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      var s = normalizeState(JSON.parse(raw));
+      return s.setup ? s : null;
+    }catch(e){ return null; }
+  }
+
+  async function startForUser(user){
+    currentUser = user;
+    loadedFor = user.id;
+    showScreen("loading");
+    try{
+      var res = await sb.from(TABLE).select("data,updated_at").eq("user_id", user.id).maybeSingle();
+      if(res.error) throw res.error;
+
+      if(res.data){
+        state = normalizeState(res.data.data);
+        lastSyncedMs = Date.parse(res.data.updated_at);
+      } else {
+        state = defaultState();
+        lastSyncedMs = 0;
+        // first login on this account: offer to bring over the old browser-only data
+        var legacy = loadLegacy();
+        if(legacy && confirm("এই ব্রাউজারে আগের হিসাবের ডেটা পাওয়া গেছে। এটা এই অ্যাকাউন্টে নিয়ে আসবেন?")){
+          state = legacy;
+          pending = true;
+          var ok = await pushNow();
+          if(ok) localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+    }catch(err){
+      console.error(err);
+      loadedFor = null;
+      var msg = (err && err.message) || "";
+      if(/user_data/.test(msg) && /(find|exist|relation)/i.test(msg)){
+        msg = "ডেটাবেসে user_data টেবিল পাওয়া যায়নি। supabase-setup.sql ফাইলটি Supabase-এর SQL Editor-এ চালান।";
+      }
+      $("loadErrorText").textContent = msg || "ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।";
+      showScreen("auth");
+      showAuthForm("loaderror");
+      return;
+    }
+    $("accountEmail").textContent = user.email || "";
+    setSyncStatus("");
+    cleanHash();
+    init();
+  }
+
+  function handleSignedOut(){
+    clearTimeout(saveTimer); clearTimeout(retryTimer);
+    currentUser = null; loadedFor = null; state = null;
+    pending = false; saving = false; recoveryMode = false;
+    setSyncStatus("");
+    ["login_password","signup_password","signup_password2","reset_password","reset_password2"].forEach(function(id){ $(id).value = ""; });
+    showScreen("auth");
+    showAuthForm("login");
+  }
+
+  function handleAuthEvent(event, session){
+    if(event === "PASSWORD_RECOVERY"){
+      recoveryMode = true;
+      showScreen("auth");
+      showAuthForm("reset");
+      return;
+    }
+    if(event === "SIGNED_OUT"){ handleSignedOut(); return; }
+    if(session && session.user){
+      if(recoveryMode) return;
+      if(loadedFor === session.user.id){ currentUser = session.user; return; }
+      startForUser(session.user);
+      return;
+    }
+    if(event === "INITIAL_SESSION" && !recoveryMode){
+      showScreen("auth");
+      showAuthForm("login", true);   // keep any message (e.g. expired-link notice)
+    }
+  }
+
+  /* ----- pick up changes made on another device ----- */
+  function applyRemoteState(){
+    if(!state.setup){ init(); return; }
+    entryDateInput.min = state.setup.startDate;
+    entryDateInput.max = state.setup.endDate;
+    renderDashboard();
+    var cur = "add";
+    tabs.forEach(function(t){ if(!$("tab-"+t).classList.contains("hidden")) cur = t; });
+    if(cur === "add") loadEntryForDate(entryDateInput.value || todayStr());
+    else switchTab(cur);
+  }
+  async function refreshFromRemote(){
+    if(!currentUser || !state || pending || saving || recoveryMode) return;
+    try{
+      var res = await sb.from(TABLE).select("data,updated_at").eq("user_id", currentUser.id).maybeSingle();
+      if(res.error || !res.data) return;
+      var ms = Date.parse(res.data.updated_at);
+      if(ms === lastSyncedMs || pending || saving) return;
+      state = normalizeState(res.data.data);
+      lastSyncedMs = ms;
+      applyRemoteState();
+    }catch(e){ /* ignore, will retry next time */ }
+  }
+  document.addEventListener("visibilitychange", function(){
+    if(!sb) return;
+    if(document.visibilityState === "hidden"){ if(pending) pushNow(); }
+    else refreshFromRemote();
+  });
+  window.addEventListener("beforeunload", function(e){
+    if(pending || saving){ e.preventDefault(); e.returnValue = ""; }
+  });
+
+  /* ----- auth form handlers ----- */
+  document.querySelectorAll(".link-btn[data-go]").forEach(function(btn){
+    btn.addEventListener("click", function(){ showAuthForm(btn.dataset.go); });
+  });
+  document.querySelectorAll(".pw-toggle").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var input = $(btn.dataset.target);
+      var show = input.type === "password";
+      input.type = show ? "text" : "password";
+      btn.textContent = show ? "লুকান" : "দেখান";
+    });
+  });
+
+  $("loginForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var form = e.target;
+    showAuthMsg("");
+    busy(form, true);
+    try{
+      var r = await sb.auth.signInWithPassword({
+        email: $("login_email").value.trim(),
+        password: $("login_password").value
+      });
+      if(r.error) showAuthMsg(authErrText(r.error));
+      // on success onAuthStateChange takes over
+    }catch(err){ showAuthMsg(authErrText(err)); }
+    busy(form, false);
+  });
+
+  $("signupForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var form = e.target;
+    showAuthMsg("");
+    var pw = $("signup_password").value;
+    if(pw.length < 8){ showAuthMsg("পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে।"); return; }
+    if(pw !== $("signup_password2").value){ showAuthMsg("দুটি পাসওয়ার্ড মিলছে না।"); return; }
+    busy(form, true);
+    try{
+      var email = $("signup_email").value.trim();
+      var r = await sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: redirectUrl() } });
+      if(r.error){
+        showAuthMsg(authErrText(r.error));
+      } else if(r.data && r.data.session){
+        // email confirmation is switched off in Supabase: already signed in
+      } else if(r.data && r.data.user && r.data.user.identities && r.data.user.identities.length === 0){
+        showAuthMsg("এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট খোলা হয়েছে। লগইন করুন, অথবা পাসওয়ার্ড ভুলে গেলে রিসেট করুন।");
+      } else {
+        $("login_email").value = email;
+        showAuthForm("login");
+        showAuthMsg("আপনার ইমেইলে একটি যাচাইকরণ লিংক পাঠানো হয়েছে। লিংকে ক্লিক করার পর এখানে লগইন করুন। (স্প্যাম ফোল্ডারও দেখে নিন)", "ok");
+      }
+    }catch(err){ showAuthMsg(authErrText(err)); }
+    busy(form, false);
+  });
+
+  $("forgotForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var form = e.target;
+    showAuthMsg("");
+    busy(form, true);
+    try{
+      var r = await sb.auth.resetPasswordForEmail($("forgot_email").value.trim(), { redirectTo: redirectUrl() });
+      if(r.error) showAuthMsg(authErrText(r.error));
+      else showAuthMsg("ওই ইমেইলে অ্যাকাউন্ট থাকলে পাসওয়ার্ড রিসেটের লিংক পাঠানো হয়েছে। ইনবক্স (আর স্প্যাম) দেখুন।", "ok");
+    }catch(err){ showAuthMsg(authErrText(err)); }
+    busy(form, false);
+  });
+
+  $("resetForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var form = e.target;
+    showAuthMsg("");
+    var pw = $("reset_password").value;
+    if(pw.length < 8){ showAuthMsg("পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে।"); return; }
+    if(pw !== $("reset_password2").value){ showAuthMsg("দুটি পাসওয়ার্ড মিলছে না।"); return; }
+    busy(form, true);
+    try{
+      var r = await sb.auth.updateUser({ password: pw });
+      if(r.error){
+        showAuthMsg(authErrText(r.error));
+      } else {
+        recoveryMode = false;
+        $("reset_password").value = ""; $("reset_password2").value = "";
+        var s = await sb.auth.getSession();
+        if(s.data && s.data.session) startForUser(s.data.session.user);
+        else { showAuthForm("login"); showAuthMsg("পাসওয়ার্ড বদলানো হয়েছে। এখন লগইন করুন।", "ok"); }
+      }
+    }catch(err){ showAuthMsg(authErrText(err)); }
+    busy(form, false);
+  });
+
+  $("loadRetryBtn").addEventListener("click", async function(){
+    var s = await sb.auth.getSession();
+    if(s.data && s.data.session) startForUser(s.data.session.user);
+    else handleSignedOut();
+  });
+  $("loadLogoutBtn").addEventListener("click", function(){ sb.auth.signOut(); });
+
+  $("logoutBtn").addEventListener("click", async function(){
+    if(pending || saving){
+      var ok = await pushNow();
+      if(!ok && !confirm("কিছু পরিবর্তন সেভ হয়নি। তবুও লগ আউট করবেন?")) return;
+    }
+    sb.auth.signOut();
+  });
+
+  /* ----- boot ----- */
+  function boot(){
+    showScreen("loading");
+    if(!configOk()){
+      showScreen("auth");
+      Object.keys(AUTH_FORMS).forEach(function(k){ $(AUTH_FORMS[k]).classList.add("hidden"); });
+      $("authConfigWarn").classList.remove("hidden");
+      return;
+    }
+    var c = cfg();
+    sb = window.supabase.createClient(c.SUPABASE_URL, c.SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+
+    // links from emails come back with the result in the URL hash
+    var hash = location.hash.replace(/^#/, "");
+    var hp = new URLSearchParams(hash);
+    recoveryMode = hp.get("type") === "recovery";
+    if(hp.get("error") || hp.get("error_description")){
+      cleanHash();
+      showScreen("auth");
+      showAuthForm("login");
+      showAuthMsg("লিংকটি কাজ করছে না বা এর মেয়াদ শেষ হয়ে গেছে। আবার চেষ্টা করুন।");
+    }
+    if(recoveryMode){
+      showScreen("auth");
+      showAuthForm("reset");
+    }
+
+    // (run handler outside the callback: supabase-js advises against awaiting its own calls inside it)
+    sb.auth.onAuthStateChange(function(event, session){
+      setTimeout(function(){ handleAuthEvent(event, session); }, 0);
+    });
+  }
+
   /* ---------------- init ---------------- */
   function init(){
-    state = load();
+    if(!state) state = defaultState();
+    $("authLoading").classList.add("hidden");
+    $("authScreen").classList.add("hidden");
     if(!state.setup){
       onboarding.classList.remove("hidden");
       mainApp.classList.add("hidden");
@@ -1054,5 +1399,5 @@
     switchTab("add");
   }
 
-  init();
+  boot();
 })();
