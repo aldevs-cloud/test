@@ -107,7 +107,10 @@
     if(name === "bills"){ renderBills(); if(!billDtTouched) resetBillDateTime(); }
   }
   document.querySelectorAll(".nav-btn, #bottomTabs button").forEach(function(btn){
-    btn.addEventListener("click", function(){ switchTab(btn.dataset.tab); });
+    btn.addEventListener("click", function(){
+      if(btn.dataset.action === "logout"){ doLogout(); return; }
+      switchTab(btn.dataset.tab);
+    });
   });
 
   /* ---------------- add / edit entry ---------------- */
@@ -1050,6 +1053,7 @@
     if(code === "same_password" || /different from the old/i.test(m)) return "নতুন পাসওয়ার্ড আগেরটার থেকে আলাদা হতে হবে।";
     if(code === "over_email_send_rate_limit" || err.status === 429 || /rate limit|too many/i.test(m)) return "অল্প সময়ে অনেকবার চেষ্টা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।";
     if(/session missing|not authenticated/i.test(m)) return "রিসেট লিংকের মেয়াদ শেষ হয়ে গেছে। \"পাসওয়ার্ড ভুলে গেছেন?\" থেকে নতুন লিংক নিন।";
+    if(code === "anonymous_provider_disabled" || /anonymous sign-ins are disabled/i.test(m)) return "অতিথি মোড এখনো চালু করা হয়নি। Supabase → Authentication → Sign In / Providers-এ \"Allow anonymous sign-ins\" চালু করুন।";
     if(/failed to fetch|network/i.test(m)) return "ইন্টারনেট সংযোগ পরীক্ষা করুন।";
     return "কিছু একটা সমস্যা হয়েছে: " + m;
   }
@@ -1160,7 +1164,7 @@
       showAuthForm("loaderror");
       return;
     }
-    $("accountEmail").textContent = user.email || "";
+    refreshUserLabels();
     setSyncStatus("");
     cleanHash();
     init();
@@ -1173,7 +1177,8 @@
     setSyncStatus("");
     ["login_password","signup_password","signup_password2","reset_password","reset_password2"].forEach(function(id){ $(id).value = ""; });
     showScreen("auth");
-    showAuthForm("login");
+    showAuthForm("login", !!pendingNotice);
+    if(pendingNotice){ showAuthMsg(pendingNotice, "ok"); pendingNotice = null; }
   }
 
   function handleAuthEvent(event, session){
@@ -1183,7 +1188,7 @@
       showAuthForm("reset");
       return;
     }
-    if(event === "SIGNED_OUT"){ handleSignedOut(); return; }
+    if(event === "SIGNED_OUT"){ if(currentUser || state) handleSignedOut(); return; }
     if(session && session.user){
       if(recoveryMode) return;
       if(loadedFor === session.user.id){ currentUser = session.user; return; }
@@ -1267,7 +1272,10 @@
     busy(form, true);
     try{
       var email = $("signup_email").value.trim();
-      var r = await sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: redirectUrl() } });
+      var nm = $("signup_name").value.trim();
+      var opts = { emailRedirectTo: redirectUrl() };
+      if(nm) opts.data = { name: nm };
+      var r = await sb.auth.signUp({ email: email, password: pw, options: opts });
       if(r.error){
         showAuthMsg(authErrText(r.error));
       } else if(r.data && r.data.session){
@@ -1326,12 +1334,111 @@
   });
   $("loadLogoutBtn").addEventListener("click", function(){ sb.auth.signOut(); });
 
-  $("logoutBtn").addEventListener("click", async function(){
+  /* ----- guest mode ----- */
+  $("guestBtn").addEventListener("click", async function(){
+    var btn = this;
+    showAuthMsg("");
+    btn.disabled = true;
+    try{
+      var r = await sb.auth.signInAnonymously();
+      if(r.error) showAuthMsg(authErrText(r.error));
+      // on success onAuthStateChange takes over
+    }catch(err){ showAuthMsg(authErrText(err)); }
+    btn.disabled = false;
+  });
+
+  /* ----- profile / name ----- */
+  var pendingNotice = null;
+  function isGuest(){ return !!(currentUser && currentUser.is_anonymous); }
+  function userName(){
+    var m = currentUser && currentUser.user_metadata;
+    return (m && m.name) ? String(m.name) : "";
+  }
+  function refreshUserLabels(){
+    if(!currentUser) return;
+    var name = userName(), guest = isGuest();
+    var line = name ? name + (guest ? " (অতিথি)" : "") : (guest ? "অতিথি" : (currentUser.email || ""));
+    $("userLine").textContent = "👤 " + line;
+    $("accountEmail").textContent = guest ? "অতিথি (ইমেইল ছাড়া)" : (currentUser.email || "");
+    $("profileName").value = name;
+    $("guestNote").classList.toggle("hidden", !guest);
+  }
+  $("profileForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var form = e.target, msg = $("profileMsg");
+    msg.textContent = "";
+    busy(form, true);
+    try{
+      var r = await sb.auth.updateUser({ data: { name: $("profileName").value.trim() } });
+      if(r.error){ msg.textContent = authErrText(r.error); }
+      else {
+        if(r.data && r.data.user) currentUser = r.data.user;
+        refreshUserLabels();
+        msg.textContent = "✓ নাম সেভ হয়েছে";
+        setTimeout(function(){ msg.textContent = ""; }, 2500);
+      }
+    }catch(err){ msg.textContent = authErrText(err); }
+    busy(form, false);
+  });
+
+  /* ----- logout / delete account ----- */
+  async function signOutNow(){
+    try{ await sb.auth.signOut(); }catch(e){}
+    if(currentUser) handleSignedOut();
+  }
+
+  // Removes the auth user (email + password) and, via cascade, the data row.
+  // Needs the delete_my_account() function from supabase-setup.sql.
+  async function deleteAccountCore(notice){
+    clearTimeout(saveTimer); clearTimeout(retryTimer);
+    pending = false;
+    try{
+      var r = await sb.rpc("delete_my_account");
+      if(r.error) throw r.error;
+    }catch(err){
+      console.error(err);
+      var m = (err && err.message) || "";
+      if(/delete_my_account/.test(m) && /(find|exist|schema cache)/i.test(m)){
+        m = "ডেটাবেসে delete_my_account ফাংশন নেই। supabase-setup.sql ফাইলটি আবার SQL Editor-এ চালান।";
+      }
+      alert("অ্যাকাউন্ট মুছতে সমস্যা হয়েছে: " + m);
+      if(state) save();
+      return false;
+    }
+    pendingNotice = notice;
+    try{ await sb.auth.signOut({ scope: "local" }); }catch(e){}
+    if(currentUser) handleSignedOut();
+    return true;
+  }
+
+  async function doLogout(){
+    if(!currentUser) return;
+    if(isGuest()){
+      if(!confirm("আপনি অতিথি হিসেবে আছেন। লগ আউট করলে এই হিসাব ও এর সব ডেটা চিরতরে মুছে যাবে, ফেরত পাওয়া যাবে না।\n\nডেটা রাখতে চাইলে আগে সেটিংস থেকে ব্যাকআপ নামিয়ে নিন। তবুও লগ আউট করবেন?")) return;
+      var done = await deleteAccountCore("অতিথি সেশন শেষ হয়েছে এবং ডেটা মুছে ফেলা হয়েছে।");
+      if(!done && confirm("অতিথি হিসাব মুছতে পারিনি। শুধু সাইন আউট করবেন? এই ডেটা আর ফিরে পাবেন না।")) await signOutNow();
+      return;
+    }
     if(pending || saving){
       var ok = await pushNow();
       if(!ok && !confirm("কিছু পরিবর্তন সেভ হয়নি। তবুও লগ আউট করবেন?")) return;
     }
-    sb.auth.signOut();
+    await signOutNow();
+  }
+
+  $("deleteAccountBtn").addEventListener("click", async function(){
+    if(!currentUser) return;
+    var btn = this, guest = isGuest();
+    var first = guest
+      ? "এই অতিথি হিসাব ও এর সব ডেটা চিরতরে মুছে যাবে। এটা ফেরানো যাবে না। এগোবেন?"
+      : "আপনার অ্যাকাউন্ট (" + (currentUser.email || "") + ") আর সব হিসাব ডেটাবেস থেকে চিরতরে মুছে যাবে। এটা ফেরানো যাবে না। এগোবেন?";
+    if(!confirm(first)) return;
+    if(!confirm("একদম শেষবার জিজ্ঞেস করছি — অ্যাকাউন্ট সত্যিই মুছে ফেলি?")) return;
+    btn.disabled = true;
+    await deleteAccountCore(guest
+      ? "অতিথি হিসাব ও সব ডেটা মুছে ফেলা হয়েছে।"
+      : "আপনার অ্যাকাউন্ট আর সব ডেটা মুছে ফেলা হয়েছে। চাইলে একই ইমেইল দিয়ে আবার নতুন অ্যাকাউন্ট খুলতে পারবেন।");
+    btn.disabled = false;
   });
 
   /* ----- boot ----- */
