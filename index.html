@@ -60,11 +60,17 @@
           <button type="button" class="link-btn" data-go="forgot">পাসওয়ার্ড ভুলে গেছেন?</button>
           <button type="button" class="link-btn" data-go="signup">নতুন অ্যাকাউন্ট খুলুন</button>
         </div>
+        <div class="auth-divider"><span>অথবা</span></div>
+        <button type="button" id="guestBtn" class="ghost-btn">অতিথি হিসেবে চালিয়ে যান</button>
+        <p class="guest-hint">ইমেইল ছাড়াই ব্যবহার করুন। ডেটা শুধু এই ডিভাইসের ব্রাউজারের সাথে বাঁধা থাকবে — ব্রাউজারের ডেটা মুছলে বা লগ আউট করলে সেটা আর ফিরে পাবেন না।</p>
       </form>
 
       <form id="signupForm" class="auth-form hidden">
         <h1>নতুন অ্যাকাউন্ট</h1>
         <p class="sub">ইমেইল আর একটি পাসওয়ার্ড দিয়ে অ্যাকাউন্ট খুলুন।</p>
+        <label>আপনার নাম <span class="opt">(ঐচ্ছিক)</span>
+          <input type="text" id="signup_name" maxlength="40" autocomplete="name" placeholder="যেমন: রহিম">
+        </label>
         <label>ইমেইল
           <input type="email" id="signup_email" required autocomplete="email" placeholder="you@example.com">
         </label>
@@ -149,6 +155,7 @@
     <aside class="sidebar">
       <div class="brand">
         <h1>টাকার হিসাব</h1>
+        <p class="user-line" id="userLine"></p>
         <p class="period" id="periodLabel">—</p>
         <p class="sync-status" id="syncStatus"></p>
       </div>
@@ -174,14 +181,17 @@
         <button data-tab="history" class="nav-btn">
           <span class="nav-ic">≡</span>সব খরচের তালিকা
         </button>
-        <button data-tab="settings" class="nav-btn">
-          <span class="nav-ic">⚙</span>ব্যালেন্স ও সেটিংস
-        </button>
         <button data-tab="plans" class="nav-btn">
           <span class="nav-ic">☑</span>খরচের প্ল্যান
         </button>
         <button data-tab="bills" class="nav-btn">
           <span class="nav-ic">⚡</span>বিল ট্র্যাকার
+        </button>
+        <button data-tab="settings" class="nav-btn">
+          <span class="nav-ic">⚙</span>ব্যালেন্স ও সেটিংস
+        </button>
+        <button type="button" data-action="logout" class="nav-btn logout-btn">
+          <span class="nav-ic">↩</span>লগ আউট
         </button>
       </nav>
     </aside>
@@ -310,28 +320,47 @@
         </div>
 
         <div class="card">
-          <h3>অ্যাকাউন্ট</h3>
-          <p class="helper-hint">লগইন করা আছে: <strong id="accountEmail">—</strong></p>
-          <button type="button" id="logoutBtn" class="ghost-btn">লগ আউট</button>
-        </div>
-
-        <div class="card">
-          <h3>ডেটা ব্যাকআপ</h3>
-          <p class="helper-hint">আপনার সব তথ্য আপনার অ্যাকাউন্টে অনলাইনে সেভ থাকে। তবুও মাঝে মাঝে একটা ব্যাকআপ ফাইল নামিয়ে রাখতে পারেন।</p>
-          <div class="btn-row">
-            <button type="button" id="exportJsonBtn" class="ghost-btn">JSON ব্যাকআপ ডাউনলোড</button>
-            <label class="ghost-btn file-btn">JSON থেকে ফিরিয়ে আনুন
-              <input type="file" id="importJsonInput" accept=".json" hidden>
+          <h3>প্রোফাইল</h3>
+          <p class="helper-hint">অ্যাকাউন্ট: <strong id="accountEmail">—</strong></p>
+          <p class="helper-hint guest-note hidden" id="guestNote">আপনি অতিথি মোডে আছেন। এই হিসাব শুধু এই ডিভাইসের ব্রাউজারের লগইনের সাথে বাঁধা — ব্রাউজারের ডেটা মুছলে বা লগ আউট করলে আর ফিরে পাবেন না। তাই ব্যাকআপ নামিয়ে রাখুন।</p>
+          <form id="profileForm">
+            <label>আপনার নাম <span class="opt">(ঐচ্ছিক)</span>
+              <input type="text" id="profileName" maxlength="40" placeholder="যেমন: রহিম">
             </label>
-            <button type="button" id="exportPdfBtn" class="ghost-btn">PDF রিপোর্ট</button>
-          </div>
+            <button type="submit">নাম সেভ করুন</button>
+            <p class="helper-hint profile-msg" id="profileMsg"></p>
+          </form>
         </div>
 
-        <div class="card danger-zone">
-          <h3>সব ডেটা মুছে ফেলুন</h3>
-          <p class="helper-hint">এতে ব্যালেন্স, সব খরচ, সব হিসাব — সবকিছু মুছে যাবে। এটা আর ফেরানো যাবে না।</p>
-          <button type="button" id="resetAllBtn" class="danger">সব মুছে নতুন করে শুরু করুন</button>
-        </div>
+        <details class="card fold-card">
+          <summary>ডেটা ব্যাকআপ</summary>
+          <div class="fold-body">
+            <p class="helper-hint">আপনার সব তথ্য আপনার অ্যাকাউন্টে অনলাইনে সেভ থাকে। তবুও মাঝে মাঝে একটা ব্যাকআপ ফাইল নামিয়ে রাখতে পারেন।</p>
+            <div class="btn-row">
+              <button type="button" id="exportJsonBtn" class="ghost-btn">JSON ব্যাকআপ ডাউনলোড</button>
+              <label class="ghost-btn file-btn">JSON থেকে ফিরিয়ে আনুন
+                <input type="file" id="importJsonInput" accept=".json" hidden>
+              </label>
+              <button type="button" id="exportPdfBtn" class="ghost-btn">PDF রিপোর্ট</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="card fold-card danger-zone">
+          <summary>মুছে ফেলার অপশন</summary>
+          <div class="fold-body">
+            <div class="fold-section">
+              <h3>সব ডেটা মুছে ফেলুন</h3>
+              <p class="helper-hint">এতে ব্যালেন্স, সব খরচ, সব হিসাব — সবকিছু মুছে যাবে। অ্যাকাউন্ট থেকে যাবে, শুধু হিসাব নতুন করে শুরু হবে। এটা আর ফেরানো যাবে না।</p>
+              <button type="button" id="resetAllBtn" class="danger">সব মুছে নতুন করে শুরু করুন</button>
+            </div>
+            <div class="fold-section">
+              <h3>অ্যাকাউন্ট মুছে ফেলুন</h3>
+              <p class="helper-hint">আপনার অ্যাকাউন্ট (ইমেইল, পাসওয়ার্ড) আর সব হিসাব ডেটাবেস থেকে চিরতরে মুছে যাবে। এটা আর ফেরানো যাবে না। চাইলে পরে একই ইমেইল দিয়ে আবার নতুন অ্যাকাউন্ট খোলা যাবে।</p>
+              <button type="button" id="deleteAccountBtn" class="danger">অ্যাকাউন্ট চিরতরে মুছুন</button>
+            </div>
+          </div>
+        </details>
       </section>
 
       <!-- PLANS (multiple named expense-planning lists) -->
@@ -424,9 +453,10 @@
       <button data-tab="add" class="active"><span class="nav-ic">＋</span>যোগ করুন</button>
       <button data-tab="calendar"><span class="nav-ic">▦</span>ক্যালেন্ডার</button>
       <button data-tab="history"><span class="nav-ic">≡</span>তালিকা</button>
-      <button data-tab="settings"><span class="nav-ic">⚙</span>সেটিংস</button>
       <button data-tab="plans"><span class="nav-ic">☑</span>প্ল্যান</button>
       <button data-tab="bills"><span class="nav-ic">⚡</span>বিল</button>
+      <button data-tab="settings"><span class="nav-ic">⚙</span>সেটিংস</button>
+      <button type="button" data-action="logout" class="logout-tab"><span class="nav-ic">↩</span>লগ আউট</button>
     </nav>
   </div>
 
