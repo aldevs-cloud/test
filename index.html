@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your Finance Manager</title>
+
+<!-- iOS home-screen app behaviour -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="টাকার হিসাব">
+<meta name="theme-color" content="#F7F5F0">
+<link rel="manifest" href="manifest.json">
+
+<!-- icons -->
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ONBOARDING -->
+  <section id="onboarding" class="onboarding">
+    <div class="onboarding-card">
+      <p class="eyebrow-free-label">টাকার হিসাব</p>
+      <h1>শুরু করা যাক</h1>
+      <p class="sub">আপনার হাতে মোট কত টাকা আছে, আর কোন তারিখ থেকে কোন তারিখ পর্যন্ত এই টাকা দিয়ে চলতে চান, সেটা বলুন।</p>
+      <form id="onboardingForm">
+        <label>মোট ব্যালেন্স (৳)
+          <input type="number" id="ob_balance" inputmode="decimal" min="0" step="1" required placeholder="যেমন: ১৫০০০">
+        </label>
+        <div class="two-col">
+          <label>শুরুর তারিখ
+            <input type="date" id="ob_start" required>
+          </label>
+          <label>শেষ তারিখ
+            <input type="date" id="ob_end" required>
+          </label>
+        </div>
+        <button type="submit">হিসাব শুরু করুন</button>
+      </form>
+      <p class="onboarding-note">চিন্তা নেই — এই তথ্য শুধু আপনার এই ব্রাউজারেই থাকবে। পরে সেটিংস থেকে বদলানো যাবে, আর ব্যাকআপও নেওয়া যাবে।</p>
+    </div>
+  </section>
+
+  <!-- MAIN APP -->
+  <div id="mainApp" class="app-shell hidden">
+
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>টাকার হিসাব</h1>
+        <p class="period" id="periodLabel">—</p>
+      </div>
+
+      <div class="hero-balance">
+        <span class="hero-label">বাকি আছে</span>
+        <span class="hero-number" id="remainingAmount">৳0</span>
+        <div class="hero-sub">
+          <div class="hero-sub-item"><span id="spentAmount">৳0</span><small>মোট খরচ</small></div>
+          <div class="hero-sub-item"><span id="daysPassedNum">0</span><small>দিন পার</small></div>
+          <div class="hero-sub-item"><span id="daysLeftNum">0</span><small>দিন বাকি</small></div>
+        </div>
+        <p class="suggest" id="suggestBudget"></p>
+      </div>
+
+      <nav class="nav" id="navButtons">
+        <button data-tab="add" class="nav-btn active">
+          <span class="nav-ic">＋</span>আজকের খরচ যোগ করুন
+        </button>
+        <button data-tab="calendar" class="nav-btn">
+          <span class="nav-ic">▦</span>ক্যালেন্ডার
+        </button>
+        <button data-tab="history" class="nav-btn">
+          <span class="nav-ic">≡</span>সব খরচের তালিকা
+        </button>
+        <button data-tab="settings" class="nav-btn">
+          <span class="nav-ic">⚙</span>ব্যালেন্স ও সেটিংস
+        </button>
+        <button data-tab="plans" class="nav-btn">
+          <span class="nav-ic">☑</span>খরচের প্ল্যান
+        </button>
+        <button data-tab="bills" class="nav-btn">
+          <span class="nav-ic">⚡</span>বিল ট্র্যাকার
+        </button>
+      </nav>
+    </aside>
+
+    <main class="content">
+
+      <!-- ADD / EDIT ENTRY -->
+      <section id="tab-add" class="tab-panel">
+        <h2 id="addTitle">আজকের খরচ যোগ করুন</h2>
+        <form id="entryForm" class="card">
+          <label>তারিখ
+            <input type="date" id="entryDate" required>
+          </label>
+          <label>আজকে মোট কত টাকা খরচ হলো
+            <input type="number" id="entryAmount" inputmode="decimal" min="0" step="1" required placeholder="৳0">
+          </label>
+
+          <details class="note-toggle">
+            <summary>কোথায় / কীভাবে খরচ হয়েছে লিখে রাখুন <span class="opt">(ঐচ্ছিক)</span></summary>
+            <textarea id="entryNote" rows="3" placeholder="যেমন: রিকশা ৫০, দুপুরের খাবার ১৮০..."></textarea>
+          </details>
+
+          <div class="helper-tools">
+            <div class="helper-tabs">
+              <button type="button" class="helper-tab-btn active" data-helper="calc">হিসাব করে বের করুন</button>
+              <button type="button" class="helper-tab-btn" data-helper="tally">টুকে টুকে রাখুন</button>
+            </div>
+
+            <div id="helper-calc" class="helper-panel">
+              <p class="helper-hint">ব্যাগে নিয়ে যা বের হয়েছিলেন, আর বাসায় ফিরে হাতে যা ছিল — দুটো লিখলে খরচ বের হয়ে যাবে।</p>
+              <div class="two-col">
+                <label>নিয়ে বের হয়েছিলাম
+                  <input type="number" id="calcOut" inputmode="decimal" placeholder="৳0">
+                </label>
+                <label>ফিরে হাতে ছিল
+                  <input type="number" id="calcIn" inputmode="decimal" placeholder="৳0">
+                </label>
+              </div>
+              <p class="helper-result">আজকের খরচ: <strong id="calcResult">৳0</strong></p>
+              <button type="button" id="useCalcBtn" class="ghost-btn">এই হিসাব বসিয়ে দিন</button>
+            </div>
+
+            <div id="helper-tally" class="helper-panel hidden">
+              <p class="helper-hint">যখন যা খরচ করছেন, তখনই একটা একটা করে টুকে রাখুন। দিন শেষে সব যোগ হয়ে যাবে।</p>
+              <div id="tallyList" class="tally-list"></div>
+              <div class="tally-add-row">
+                <input type="text" id="tallyDesc" placeholder="কী কিনলেন (ঐচ্ছিক)">
+                <input type="number" id="tallyAmount" inputmode="decimal" placeholder="৳">
+                <button type="button" id="tallyAddBtn" aria-label="যোগ করুন">+</button>
+              </div>
+              <p class="helper-result">টুকে রাখা মোট: <strong id="tallyTotal">৳0</strong></p>
+              <button type="button" id="useTallyBtn" class="ghost-btn">এই মোট বসিয়ে দিন</button>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="saveEntryBtn">সেভ করুন</button>
+            <button type="button" id="deleteEntryBtn" class="danger hidden">এই তারিখের হিসাব মুছুন</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- CALENDAR -->
+      <section id="tab-calendar" class="tab-panel hidden">
+        <div class="cal-header">
+          <button type="button" id="calPrev" aria-label="আগের মাস">←</button>
+          <h2 id="calMonthLabel">—</h2>
+          <button type="button" id="calNext" aria-label="পরের মাস">→</button>
+        </div>
+        <div class="cal-legend">
+          <span><i class="dot normal"></i> খরচ হয়েছে</span>
+          <span><i class="dot high"></i> ১০০০+ টাকা খরচ</span>
+        </div>
+        <div class="cal-weekdays">
+          <span>র</span><span>সো</span><span>ম</span><span>বু</span><span>বৃ</span><span>শু</span><span>শ</span>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </section>
+
+      <!-- HISTORY -->
+      <section id="tab-history" class="tab-panel hidden">
+        <h2>সব খরচের তালিকা</h2>
+        <div id="historyList" class="history-list"></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="tab-settings" class="tab-panel hidden">
+        <h2>ব্যালেন্স ও সেটিংস</h2>
+
+        <div class="card">
+          <h3>বাজেটের সময়কাল</h3>
+          <form id="setupEditForm">
+            <label>শুরুর ব্যালেন্স (৳)
+              <input type="number" id="set_balance" inputmode="decimal" min="0" step="1" required>
+            </label>
+            <div class="two-col">
+              <label>শুরুর তারিখ
+                <input type="date" id="set_start" required>
+              </label>
+              <label>শেষ তারিখ
+                <input type="date" id="set_end" required>
+              </label>
+            </div>
+            <button type="submit">আপডেট করুন</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>টাকা যোগ করুন</h3>
+          <p class="helper-hint">নতুন করে টাকা পেলে এখানে যোগ করুন — এটা মোট ব্যালেন্সের সাথে যোগ হয়ে যাবে।</p>
+          <form id="topupForm">
+            <div class="two-col">
+              <label>পরিমাণ (৳)
+                <input type="number" id="topup_amount" inputmode="decimal" min="0" step="1" required>
+              </label>
+              <label>তারিখ
+                <input type="date" id="topup_date" required>
+              </label>
+            </div>
+            <label>নোট <span class="opt">(ঐচ্ছিক)</span>
+              <input type="text" id="topup_note" placeholder="যেমন: বেতন">
+            </label>
+            <button type="submit">যোগ করুন</button>
+          </form>
+          <div id="topupHistory" class="topup-history"></div>
+        </div>
+
+        <div class="card">
+          <h3>ডেটা ব্যাকআপ</h3>
+          <p class="helper-hint">ডেটাবেস নেই — সব তথ্য এই ব্রাউজারে সেভ থাকে। ব্রাউজারের ডেটা মুছে গেলে হিসাবও হারিয়ে যাবে, তাই মাঝে মাঝে ব্যাকআপ নিয়ে রাখুন।</p>
+          <div class="btn-row">
+            <button type="button" id="exportJsonBtn" class="ghost-btn">JSON ব্যাকআপ ডাউনলোড</button>
+            <label class="ghost-btn file-btn">JSON থেকে ফিরিয়ে আনুন
+              <input type="file" id="importJsonInput" accept=".json" hidden>
+            </label>
+            <button type="button" id="exportPdfBtn" class="ghost-btn">PDF রিপোর্ট</button>
+          </div>
+        </div>
+
+        <div class="card danger-zone">
+          <h3>সব ডেটা মুছে ফেলুন</h3>
+          <p class="helper-hint">এতে ব্যালেন্স, সব খরচ, সব হিসাব — সবকিছু মুছে যাবে। এটা আর ফেরানো যাবে না।</p>
+          <button type="button" id="resetAllBtn" class="danger">সব মুছে নতুন করে শুরু করুন</button>
+        </div>
+      </section>
+
+      <!-- PLANS (multiple named expense-planning lists) -->
+      <section id="tab-plans" class="tab-panel hidden">
+        <h2>খরচের প্ল্যান</h2>
+
+        <div class="plan-tabs" id="planTabsStrip"></div>
+
+        <p id="planEmpty" class="empty-state hidden">এখনো কোনো প্ল্যান তৈরি করা হয়নি। উপরে থেকে "+ নতুন" চেপে একটি প্ল্যান তৈরি করুন।</p>
+
+        <div id="planPanel" class="plan-panel hidden">
+          <div class="plan-meta">
+            <div class="plan-meta-title">
+              <h3 id="planTitle">—</h3>
+              <button type="button" id="planRenameBtn" class="icon-btn" aria-label="নাম পরিবর্তন করুন">✎</button>
+            </div>
+            <p class="plan-created" id="planCreatedLabel"></p>
+            <div class="plan-meta-actions">
+              <button type="button" id="planPdfBtn" class="ghost-btn small">এই প্ল্যান PDF করুন</button>
+              <button type="button" id="planDeleteBtn" class="danger small">এই প্ল্যান মুছুন</button>
+            </div>
+          </div>
+
+          <form id="planItemForm" class="card plan-item-form">
+            <div class="two-col">
+              <label>খরচের নাম
+                <input type="text" id="planItemName" required placeholder="যেমন: বাজার">
+              </label>
+              <label>কত টাকা লাগবে (৳)
+                <input type="number" id="planItemAmount" inputmode="decimal" min="0" step="1" required placeholder="৳0">
+              </label>
+            </div>
+            <button type="submit">তালিকায় যোগ করুন</button>
+          </form>
+
+          <div id="planItemsList" class="plan-items-list"></div>
+
+          <div class="plan-summary">
+            <div><span id="planTotalPlanned">৳0</span><small>মোট পরিকল্পনা</small></div>
+            <div><span id="planTotalDone">৳0</span><small>সম্পন্ন খরচ</small></div>
+            <div><span id="planTotalRemaining">৳0</span><small>বাকি আছে</small></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BILLS (recharge / balance tracker: meter, gas, internet...) -->
+      <section id="tab-bills" class="tab-panel hidden">
+        <h2>বিল ট্র্যাকার</h2>
+
+        <div class="plan-tabs" id="billTabsStrip"></div>
+
+        <p id="billEmpty" class="empty-state hidden">এখনো কোনো বিল যোগ করা হয়নি। উপরে "+ নতুন" চেপে একটি বিল (যেমন: মিটার) তৈরি করুন।</p>
+
+        <div id="billPanel" class="hidden">
+          <div class="plan-meta">
+            <div class="plan-meta-title">
+              <h3 id="billTitle">—</h3>
+              <button type="button" id="billRenameBtn" class="icon-btn" aria-label="নাম পরিবর্তন করুন">✎</button>
+            </div>
+            <div class="plan-meta-actions">
+              <button type="button" id="billDeleteBtn" class="danger small">এই বিল মুছুন</button>
+            </div>
+          </div>
+
+          <div id="billSummary"></div>
+
+          <form id="billEntryForm" class="card">
+            <div class="bill-kind-tabs">
+              <button type="button" class="bill-kind-btn active" data-kind="recharge">রিচার্জ করলাম</button>
+              <button type="button" class="bill-kind-btn" data-kind="check">ব্যালেন্স দেখলাম</button>
+            </div>
+            <label><span id="billAmountLabel">কত টাকা রিচার্জ করলেন (৳)</span>
+              <input type="number" id="billAmount" inputmode="decimal" min="0" step="any" required placeholder="৳0">
+            </label>
+            <label>তারিখ ও সময়
+              <input type="datetime-local" id="billDateTime" required>
+            </label>
+            <button type="button" id="billNowBtn" class="ghost-btn small bill-now-btn">এখনকার সময় বসান</button>
+            <button type="submit" id="billSubmitBtn">রিচার্জ যোগ করুন</button>
+          </form>
+
+          <h3 class="bill-log-title">সব এন্ট্রি</h3>
+          <div id="billLog" class="bill-log"></div>
+        </div>
+      </section>
+
+    </main>
+
+    <nav class="bottom-tabs" id="bottomTabs">
+      <button data-tab="add" class="active"><span class="nav-ic">＋</span>যোগ করুন</button>
+      <button data-tab="calendar"><span class="nav-ic">▦</span>ক্যালেন্ডার</button>
+      <button data-tab="history"><span class="nav-ic">≡</span>তালিকা</button>
+      <button data-tab="settings"><span class="nav-ic">⚙</span>সেটিংস</button>
+      <button data-tab="plans"><span class="nav-ic">☑</span>প্ল্যান</button>
+      <button data-tab="bills"><span class="nav-ic">⚡</span>বিল</button>
+    </nav>
+  </div>
+
+</div>
+
+<!-- Print-only report, filled in by JS just before printing -->
+<div id="printArea" class="print-only"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
